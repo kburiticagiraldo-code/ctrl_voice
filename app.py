@@ -1,6 +1,4 @@
-import base64
 import json
-import os
 import unicodedata
 
 import paho.mqtt.client as paho
@@ -10,71 +8,72 @@ from bokeh.models.widgets import Button
 from streamlit_bokeh_events import streamlit_bokeh_events
 
 # ---------- Configuración ----------
-st.set_page_config(page_title="Interfaces Multimodales", page_icon="🎙️", layout="centered")
+st.set_page_config(page_title="Casa por voz", page_icon="🏠", layout="centered")
 
 BROKER = "broker.mqttdashboard.com"
 PORT = 1883
 TOPIC = "ksbg"
-IMAGEN = "voice_ctrl.jpg"
 
 # ---------- Estilos ----------
+# Paleta: azul hielo (fondo), tinta marino (texto), verde agua (acción), ámbar (encendido)
 st.markdown(
     """
     <style>
-    .stApp {
-        background: linear-gradient(160deg, #1E1B5E 0%, #0F1230 35%, #0A0D24 100%);
-    }
+    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=DM+Sans:wght@400;500;700&display=swap');
+
+    .stApp { background: #E9F0F4; }
     header[data-testid="stHeader"] { background: transparent; }
-    .block-container { max-width: 760px; padding-top: 3rem; }
-    p, span, div, label { color: #E6E8FF; }
+    .block-container { max-width: 620px; padding-top: 3.5rem; }
+    html, body, p, span, div, label { font-family: 'DM Sans', sans-serif; color: #10263A; }
 
     .titulo {
-        text-align: center; font-size: 2.3rem; font-weight: 800; margin: 0;
-        background: linear-gradient(90deg, #4DA3FF, #B47CFF, #FF7CC8);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+        font-size: 3.2rem; line-height: 1.02; letter-spacing: -0.02em; margin: 0 0 12px 0;
     }
-    .subtitulo {
-        text-align: center; letter-spacing: .35em; font-size: .85rem;
-        color: #9FA6D9 !important; margin: 10px 0 24px 0;
-    }
-    .avatar {
-        width: 190px; height: 190px; border-radius: 50%; margin: 0 auto 36px auto;
-        border: 3px solid #7C6CF0; background: #FFFFFF; overflow: hidden;
-        display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 0 40px rgba(124, 108, 240, .35); font-size: 5rem;
-    }
-    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .intro { font-size: 1.1rem; color: #4A6275 !important; margin: 0 0 30px 0; max-width: 30em; }
 
-    .seccion {
-        font-size: 1rem; font-weight: 700; letter-spacing: .04em;
-        margin: 26px 0 12px 0; color: #FFFFFF !important;
+    .voz {
+        background: #FFFFFF; border-radius: 28px; padding: 24px 26px 8px 26px;
+        box-shadow: 0 10px 30px rgba(16, 38, 58, .08);
     }
+    .voz .pista { font-size: .95rem; color: #4A6275 !important; margin-bottom: 4px; }
+    .escuche {
+        font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700;
+        font-size: 1.9rem; line-height: 1.2; margin: 6px 0 18px 0;
+    }
+    .escuche.vacio { color: #9DB0BF !important; }
 
-    .estado-grid { display: flex; gap: 16px; }
-    .estado {
-        flex: 1; text-align: center; padding: 22px 12px; border-radius: 20px;
-        background: #141937; border: 1px solid #2A3060;
+    .titulo-lista {
+        font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700;
+        font-size: 1.3rem; margin: 34px 0 12px 0;
     }
-    .estado .luz {
-        width: 38px; height: 38px; border-radius: 50%; margin: 0 auto 12px auto;
-        background: radial-gradient(circle at 35% 30%, #F4EEFF, #9C8BD0);
+    .fila {
+        display: flex; align-items: center; gap: 16px;
+        background: #FFFFFF; border-radius: 20px; padding: 16px 20px; margin-bottom: 12px;
     }
-    .estado.on  .luz { background: radial-gradient(circle at 35% 30%, #FFF6C2, #FFB020);
-                       box-shadow: 0 0 22px rgba(255, 176, 32, .7); }
-    .estado.off .luz { background: radial-gradient(circle at 35% 30%, #5B6190, #2C3160); }
-    .estado .nombre { font-size: .8rem; letter-spacing: .2em; color: #9FA6D9 !important; }
-    .estado .valor  { font-size: 1.15rem; font-weight: 700; margin-top: 4px; color: #FFFFFF !important; }
+    .fila .icono {
+        width: 48px; height: 48px; border-radius: 14px; background: #E9F0F4;
+        display: flex; align-items: center; justify-content: center; font-size: 1.5rem;
+    }
+    .fila.on .icono { background: #FFE9B0; }
+    .fila .texto { flex: 1; }
+    .fila .nombre { font-weight: 700; font-size: 1.05rem; }
+    .fila .estado { font-size: .92rem; color: #4A6275 !important; }
 
-    .cmd-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-    .cmd {
-        padding: 8px 16px; border-radius: 999px; font-size: .9rem;
-        background: #1B2150; border: 1px solid #343B7A; color: #DDE0FF !important;
+    .switch {
+        width: 56px; height: 32px; border-radius: 999px; background: #C5D3DD;
+        position: relative; transition: background .25s;
     }
-    .ultimo {
-        padding: 16px 20px; border-radius: 16px; background: #141937;
-        border: 1px solid #2A3060; font-size: 1.1rem;
+    .switch::after {
+        content: ""; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px;
+        border-radius: 50%; background: #FFFFFF; transition: left .25s;
     }
-    .ultimo b { color: #B47CFF !important; }
+    .fila.on .switch { background: #0E9F8E; }
+    .fila.on .switch::after { left: 28px; }
+
+    .ejemplos { color: #4A6275 !important; font-size: .98rem; line-height: 1.7; }
+    .ejemplos b { color: #10263A !important; font-weight: 500;
+                  background: #FFFFFF; padding: 2px 10px; border-radius: 8px; }
 
     iframe { border-radius: 14px; }
     </style>
@@ -83,8 +82,8 @@ st.markdown(
 )
 
 # ---------- Estado ----------
-st.session_state.setdefault("luces", "Sin datos")
-st.session_state.setdefault("puerta", "Sin datos")
+st.session_state.setdefault("luces", None)    # True / False / None
+st.session_state.setdefault("puerta", None)
 st.session_state.setdefault("ultimo", None)
 
 
@@ -94,18 +93,17 @@ def normalizar(texto: str) -> str:
 
 
 def interpretar(texto: str):
-    """Actualiza el estado visual según lo que se dijo."""
     t = normalizar(texto)
     if "luz" in t or "luces" in t:
         if any(p in t for p in ("enciend", "encend", "prend", "activ")):
-            st.session_state.luces = "Encendidas"
+            st.session_state.luces = True
         elif any(p in t for p in ("apag", "desactiv")):
-            st.session_state.luces = "Apagadas"
+            st.session_state.luces = False
     if "puerta" in t:
         if "abr" in t:
-            st.session_state.puerta = "Abierta"
+            st.session_state.puerta = True
         elif "cerr" in t:
-            st.session_state.puerta = "Cerrada"
+            st.session_state.puerta = False
 
 
 def publicar(texto: str):
@@ -115,30 +113,43 @@ def publicar(texto: str):
     client.disconnect()
 
 
-def clase(valor: str) -> str:
-    if valor in ("Encendidas", "Abierta"):
-        return "on"
-    if valor in ("Apagadas", "Cerrada"):
-        return "off"
-    return ""
+def fila(icono, nombre, valor, si, no):
+    clase = "on" if valor else ""
+    estado = si if valor else (no if valor is False else "Sin información todavía")
+    return f"""
+    <div class="fila {clase}">
+        <div class="icono">{icono}</div>
+        <div class="texto"><div class="nombre">{nombre}</div><div class="estado">{estado}</div></div>
+        <div class="switch"></div>
+    </div>
+    """
 
 
 # ---------- Encabezado ----------
-st.markdown('<div class="titulo">🎙️ INTERFACES MULTIMODALES</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitulo">CONTROL POR VOZ</div>', unsafe_allow_html=True)
+st.markdown('<div class="titulo">Dilo y<br>se hace.</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="intro">Controla las luces y la puerta con tu voz. '
+    "Interfaces multimodales, control por voz.</div>",
+    unsafe_allow_html=True,
+)
 
-if os.path.exists(IMAGEN):
-    with open(IMAGEN, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    avatar = f'<img src="data:image/jpeg;base64,{b64}">'
+# ---------- Panel de voz ----------
+if st.session_state.ultimo:
+    escuche = f'<div class="escuche">“{st.session_state.ultimo}”</div>'
 else:
-    avatar = "💡"
-st.markdown(f'<div class="avatar">{avatar}</div>', unsafe_allow_html=True)
+    escuche = '<div class="escuche vacio">Aquí verás lo que digas</div>'
 
-# ---------- Botón de voz ----------
-st.markdown('<div class="seccion">🎧 TOCA EL BOTÓN Y HABLA</div>', unsafe_allow_html=True)
+st.markdown(
+    f"""
+    <div class="voz">
+        <div class="pista">Pulsa el botón, permite el micrófono y habla</div>
+        {escuche}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-stt_button = Button(label="🎙️  Iniciar escucha", width=300, height=50, button_type="primary")
+stt_button = Button(label="🎙️  Hablar", width=260, height=52, button_type="success")
 stt_button.js_on_event(
     "button_click",
     CustomJS(
@@ -180,41 +191,22 @@ if result and "GET_TEXT" in result:
             publicar(texto)
             st.session_state.ultimo = texto
             interpretar(texto)
+            st.rerun()
         except Exception as e:
             st.error(f"No se pudo enviar por MQTT: {e}")
 
-# ---------- Último comando ----------
-if st.session_state.ultimo:
-    st.markdown(
-        f'<div class="ultimo">Último comando: <b>“{st.session_state.ultimo}”</b></div>',
-        unsafe_allow_html=True,
-    )
-
-# ---------- Estado del sistema ----------
-luces, puerta = st.session_state.luces, st.session_state.puerta
-st.markdown('<div class="seccion">📡 ESTADO DEL SISTEMA</div>', unsafe_allow_html=True)
+# ---------- Dispositivos ----------
+st.markdown('<div class="titulo-lista">Tu casa ahora</div>', unsafe_allow_html=True)
 st.markdown(
-    f"""
-    <div class="estado-grid">
-        <div class="estado {clase(luces)}">
-            <div class="luz"></div>
-            <div class="nombre">LUCES</div>
-            <div class="valor">{luces}</div>
-        </div>
-        <div class="estado {clase(puerta)}">
-            <div class="luz"></div>
-            <div class="nombre">PUERTA</div>
-            <div class="valor">{puerta}</div>
-        </div>
-    </div>
-    """,
+    fila("💡", "Luces", st.session_state.luces, "Encendidas", "Apagadas")
+    + fila("🚪", "Puerta", st.session_state.puerta, "Abierta", "Cerrada"),
     unsafe_allow_html=True,
 )
 
-# ---------- Comandos disponibles ----------
-st.markdown('<div class="seccion">💬 COMANDOS DISPONIBLES</div>', unsafe_allow_html=True)
-comandos = ["Enciende las luces", "Apaga las luces", "Abre la puerta", "Cierra la puerta"]
+# ---------- Ejemplos ----------
+st.markdown('<div class="titulo-lista">Prueba diciendo</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="cmd-grid">' + "".join(f'<span class="cmd">{c}</span>' for c in comandos) + "</div>",
+    '<div class="ejemplos"><b>enciende las luces</b> <b>apaga las luces</b><br>'
+    "<b>abre la puerta</b> <b>cierra la puerta</b></div>",
     unsafe_allow_html=True,
 )
